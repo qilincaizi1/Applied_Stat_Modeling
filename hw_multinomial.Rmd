@@ -1,0 +1,296 @@
+---
+title: "MA678 homework 05"
+author: "Tingrui Huang"
+date: "Oct. 24, 2018"
+output:
+  pdf_document: default
+  word_document: default
+subtitle: Multinomial Regression
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="pdf",fig.align  = 'center')
+pacman::p_load(
+  "ggplot2",
+  "knitr",
+  "arm",
+  "data.table",
+  "foreign",
+  "car",
+  "faraway",
+  "nnet",
+  "reshape2",
+  "VGAM"
+)
+```
+
+
+## Multinomial logit: 
+Using the individual-level survey data from the 2000 National Election Study (data in folder nes), predict party identification (which is on a 7-point scale) using ideology and demographics with an ordered multinomial logit model.
+```{r, echo=FALSE}
+nes5200<-read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/nes/nes5200_processed_voters_realideo.dta")
+#saveRDS(nes5200,"nes5200.rds")
+#nes5200<-readRDS("nes5200.rds")
+# logistic regression of vote preference on income
+nes5200_dt <- data.table(nes5200)
+  yr <- 2000
+nes5200_dt_s<-nes5200_dt[ year==yr,]
+nes5200_dt_s$income <- droplevels(nes5200_dt_s$income)
+nes5200_dt_s$partyid7 <- droplevels(nes5200_dt_s$partyid7)
+
+nes5200_dt_s$gender <- factor(nes5200_dt_s$gender, labels=c("male", "female"))
+nes5200_dt_s$race <- factor(nes5200_dt_s$race, labels=c("white", "black", "asian", 
+                                    "native american", "hispanic"))
+nes5200_dt_s$south <- factor(nes5200_dt_s$south)
+nes5200_dt_s$ideo <- factor(nes5200_dt_s$ideo, labels=c("liberal", "moderate", "conservative"))
+
+nes_data_comp<-nes5200_dt_s[complete.cases(nes5200_dt_s[,list(partyid7,income,ideo,female,white)])]
+nes_data_comp$ideology <- scale(nes_data_comp$ideo_feel,center=TRUE)
+```
+1. Summarize the parameter estimates numerically and also graphically. 
+
+```{r}
+library(coefplot)
+catreg_pi <- vglm(partyid7~ideo+white+female+income, data = nes_data_comp, Hess = TRUE, family = multinomial())
+catreg_pi2 <- polr(ordered(partyid7)~ideo+white+female+income, data = nes_data_comp, Hess = TRUE)
+summary(catreg_pi2)
+# summarize parameter estimates graphically
+coefplot(catreg_pi2)
+```
+
+2. Explain the results from the fitted model.
+```{r}
+catreg_pi2 <- polr(partyid7~ideo+white+female+income, data = nes_data_comp, Hess = TRUE)
+summary(catreg_pi2)
+confint(catreg_pi2)
+```
+\color{blue}From the above result we can see the "female" predictor is not statistically significant. Other variables such as "ideo", "white" and "income" are statistically significant.
+"ideo": the liberal is set as a baseline. Comparing to liberal, people have moderate and conservative ideology tend to have independent or republican party identifiction. For people with moderate ideo, the log odds of supporting republican will be increase by 0.989 and people with conservative ideo, the log odds will increase 1.977.
+"white": the coefficient is positive means white people tend to be more republican-friendly comparing with other race.
+"income": income level of "0-16" is set as baseline. Generally speaking, the more a people make the more this people will be friendly to republican.\color{black}
+
+3. Use a binned residual plot to assess the fit of the model.
+```{r, warning=FALSE}
+library(tidyverse)
+nes_resid <- nes_data_comp %>% select(partyid7,ideo,white,female,income) %>% na.omit() %>% as.data.frame()
+nes_resid_m <- model.matrix(~factor(partyid7),data=nes_resid)-fitted(catreg_pi)
+nes_resid_m[,1] <- (nes_resid$partyid7==1)*1
+
+par(mfrow=c(3,2))
+for (i in 1:6) {
+  binnedplot(fitted(catreg_pi)[,i],nes_resid_m[,i])
+}
+```
+
+
+# High School and Beyond 
+The hsb data was collected as a subset of the High School and Beyond study conducted by the National Education Longitudinal Studies program of the National Center for Education Statistics. The variables are gender; race; socioeconomic status; school type; chosen high school program type; scores on reading, writing, math, science, and social studies. We want to determine which factors are related to the choice of the type of programa``academic, vocational, or generala``that the students pursue in high school. The response is multinomial with three levels.
+
+```{r}
+data(hsb)
+?hsb
+```
+
+1. Fit a trinomial response model with the other relevant variables as predictors (untransformed).
+```{r}
+catreg_hs <- polr(prog~gender+race+ses+schtyp+read+write+math+science+socst,data = hsb, Hess = TRUE)
+summary(catreg_hs)
+```
+
+2. For the student with id 99, compute the predicted probabilities of the three possible choices.
+
+```{r}
+predict(catreg_hs,hsb[hsb$id==99,],type="probs")
+```
+
+
+# Happiness
+Data were collected from 39 students in a University of Chicago MBA class and may be found in the dataset `happy`.
+```{r}
+library(faraway)
+data(happy)
+?happy
+
+```
+
+1. Build a model for the level of happiness as a function of the other variables.
+```{r}
+library(nnet)
+catreg_hp <- polr(factor(happy)~money+sex+love+work, data = happy,Hess = TRUE)
+summary(catreg_hp)
+```
+
+2. Interpret the parameters of your chosen model.
+```{r}
+confint(catreg_hp)
+```
+\color{blue}Among the four predictors, the sex is not a statistically significant predictor.
+"money": money has a positive coefficient which means the more money a person make the higher happy score this person will get. For every additional thousand dollars a person make, the log odds of getting higher happy score will increase 0.02.
+"love" and "work": both of these predictors have positive coefficient so that for every unit increase in love and work, the log odds of getting a higher happy score will increase by their coefficients.\color{black}
+
+3. Predict the happiness distribution for subject whose parents earn $30,000 a year,
+who is lonely, not sexually active and has no job.
+```{r}
+predict(catreg_hp,data.frame(money=30,sex=0,love=1,work=1),type="probs")
+```
+
+# newspaper survey on Vietnam War
+A student newspaper conducted a survey of student opinions about the Vietnam War in May 1967. Responses were classified by sex, year in the program and one of four opinions. The survey was voluntary. The data may be found in the dataset `uncviet`.  Treat the opinion as the response and the sex and year as predictors. Build a proportional odds model, giving an interpretation to the estimates.
+
+```{r}
+data(uncviet)
+?uncviet
+catreg_viet <- polr(policy~sex+year, weights = y,data = uncviet, Hess = TRUE)
+summary(catreg_viet)
+```
+\color{blue}"sexMale": comparing to female, male students tend to be more aggressive on the Vietnam war. The log odds of getting higher response level is less for male comparing with female by 0.64.
+"year": take fresh as a baseline, all other levels has relatively mild opinion on Viewnam war. In general, students at higher level tend to have higher log odds of getting a mild opinion comparing to student at lower level.\color{black}
+
+# pneumonoconiosis of coal miners
+The pneumo data gives the number of coal miners classified by radiological examination into one of three categories of pneumonoconiosis and by the number of years spent working at the coal face divided into eight categories.
+
+```{r}
+library(faraway)
+data(pneumo,package="faraway")
+?pneumo
+View(pneumo)
+```
+
+1. Treating the pneumonoconiosis status as response variable as nominal, build a model for predicting the frequency of the three outcomes in terms of length of service and use it to predict the outcome for a miner with 25 years of service.
+
+```{r}
+catreg_pne <- multinom(status~year, weights = Freq, data = pneumo)
+predict(catreg_pne,data.frame(year=25),type="probs")
+```
+
+2. Repeat the analysis with the pneumonoconiosis status being treated as ordinal. 
+
+```{r}
+catreg_pne2 <- polr(status~year, weights = Freq, data = pneumo, Hess = TRUE)
+summary(catreg_pne2)
+predict(catreg_pne2,data.frame(year=25),type="probs")
+```
+
+3.Now treat the response variable as hierarchical with top level indicating whether
+the miner has the disease and the second level indicating, given they have the
+disease, whether they have a moderate or severe case. 
+
+```{r}
+pneumo2 <- pneumo %>% mutate(disease=ifelse(pneumo$status=="normal",0,1)) # normal = 0, mild & severe = 1
+ifdisease <- glm(disease~year, data = pneumo2,weights=Freq)
+summary(ifdisease)
+pneumo3 <- pneumo2 %>% filter(disease==1) %>% mutate(level=ifelse(status=="mild",0,1))
+levelofs <- glm(level~year,data = pneumo3,weights=Freq)
+ifd_pred <- predict(ifdisease, newdata=data.frame(year=25),type="response")
+no_disease <- 1-ifd_pred
+level_pred <- predict(levelofs,data.frame(year=25),type="response")
+level_mild <- (1 - level_pred)*ifd_pred
+level_severe <- level_pred*ifd_pred
+cbind(no_disease,level_mild,level_severe)
+```
+
+4.  Compare the three analyses.
+
+```{r}
+summary(catreg_pne)
+summary(catreg_pne2)
+summary(ifdisease,ifd_pred)
+```
+The first model has smaller residual deviance and AIC than the second model. 
+
+
+
+
+# (optional) Multinomial choice models: 
+
+Pardoe and Simonton (2006) fit a discrete choice model to predict winners of the Academy Awards. Their data are in the folder academy.awards.
+
+name  | description
+------|----------------------------------------
+No    | unique nominee identifier
+Year  | movie release year (not ceremony year)
+Comp  | identifier for year/category
+Name  | short nominee name
+PP    | best picture indicator
+DD    | best director indicator
+MM    | lead actor indicator
+FF    | lead actress indicator
+Ch    | 1 if win, 2 if lose
+Movie | short movie name
+Nom   | total oscar nominations
+Pic   | picture nom
+Dir   | director nom
+Aml   | actor male lead nom
+Afl   | actor female lead nom
+Ams   | actor male supporting nom
+Afs   | actor female supporting nom
+Scr   | screenplay nom
+Cin   | cinematography nom
+Art   | art direction nom
+Cos   | costume nom
+Sco   | score nom
+Son   | song nom
+Edi   | editing nom
+Sou   | sound mixing nom
+For   | foreign nom
+Anf   | animated feature nom
+Eff   | sound editing/visual effects nom
+Mak   | makeup nom
+Dan   | dance nom
+AD    | assistant director nom
+PrNl  | previous lead actor nominations
+PrWl  | previous lead actor wins
+PrNs  | previous supporting actor nominations
+PrWs  | previous supporting actor wins
+PrN   | total previous actor/director nominations
+PrW   | total previous actor/director wins
+Gdr   | golden globe drama win
+Gmc   | golden globe musical/comedy win
+Gd    | golden globe director win
+Gm1   | golden globe male lead actor drama win
+Gm2   | golden globe male lead actor musical/comedy win
+Gf1   | golden globe female lead actor drama win
+Gf2   | golden globe female lead actor musical/comedy win
+PGA   | producer's guild of america win
+DGA   | director's guild of america win
+SAM   | screen actor's guild male win
+SAF   | screen actor's guild female win
+PN    | PP*Nom
+PD    | PP*Dir
+DN    | DD*Nom
+DP    | DD*Pic
+DPrN  | DD*PrN
+DPrW  | DD*PrW
+MN    | MM*Nom
+MP    | MM*Pic
+MPrN  | MM*PrNl
+MPrW  | MM*PrWl
+FN    | FF*Nom
+FP    | FF*Pic
+FPrN  | FF*PrNl
+FPrW  | FF*PrWl
+
+```{r, echo=FALSE}
+# coefficient for black in 1964 to illustrate nonidentifiability of logistic regression for chap 5 hwk
+oscar<-read.csv("http://www.stat.columbia.edu/~gelman/arm/examples/academy.awards/oscars.csv",header=TRUE)
+#saveRDS(oscar,"oscar.rds")
+#oscar<-readRDS("oscar.rds")
+```
+
+1. Fit your own model to these data.
+
+```{r}
+
+```
+
+2. Display the fitted model on a plot that also shows the data.
+
+```{r}
+
+```
+
+3. Make a plot displaying the uncertainty in inferences from the fitted model.
+
+```{r}
+
+```
